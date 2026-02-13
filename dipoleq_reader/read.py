@@ -21,15 +21,15 @@ def h5_to_dict_recursive(h5_object):
         if isinstance(item, h5py.Dataset):
             # If it's a dataset, get the data as a numpy array
             result[key] = {}
-            result[key]['data'] = item[()]
+            result[key]["data"] = item[()]
             if "UNITS" in item.attrs.keys():
-                result[key]['units'] = str(item.attrs["UNITS"])
+                result[key]["units"] = str(item.attrs["UNITS"])
             else:
-                result[key]['units'] = "N/A"
+                result[key]["units"] = "N/A"
             if "NAME" in item.attrs.keys():
-                result[key]['name'] = str(item.attrs["NAME"])
+                result[key]["name"] = str(item.attrs["NAME"])
             else:
-                result[key]['name'] = "N/A"
+                result[key]["name"] = "N/A"
 
         elif isinstance(item, h5py.Group):
             # If it's a group, recurse into it
@@ -37,45 +37,45 @@ def h5_to_dict_recursive(h5_object):
     return result
 
 
-class DPEqReader():
+class DPEqReader:
     def __init__(self, filename):
         self.data = {}
         try:
-            with h5py.File(filename, 'r') as h5f:
+            with h5py.File(filename, "r") as h5f:
                 data = h5_to_dict_recursive(h5f)
-                for (k, v) in h5f.attrs.items():
+                for k, v in h5f.attrs.items():
                     data[k.lower()] = v
-                data['filename'] = filename
+                data["filename"] = filename
                 self.data = data
         except Exception as e:
             print(f"Error reading HDF5 file: {e}")
 
     def get_R(self):
-        return self.data['Grid']['R']['data']
+        return self.data["Grid"]["R"]["data"]
 
     def get_Z(self):
-        return self.data['Grid']['Z']['data']
+        return self.data["Grid"]["Z"]["data"]
 
     def get_psi(self):
-        return self.data['Grid']['Psi']['data']
+        return self.data["Grid"]["Psi"]["data"]
 
     def get_Bp_r(self):
-        return self.data['Grid']['Bp_R']['data']
+        return self.data["Grid"]["Bp_R"]["data"]
 
     def get_Bp_z(self):
-        return self.data['Grid']['Bp_Z']['data']
+        return self.data["Grid"]["Bp_Z"]["data"]
 
     def get_inner_wall(self):
-        return self.data['Boundaries']['ilim']['data']
+        return self.data["Boundaries"]["ilim"]["data"]
 
     def get_outer_wall(self):
-        return self.data['Boundaries']['olim']['data']
+        return self.data["Boundaries"]["olim"]["data"]
 
     def get_fcfs(self):
-        return self.data['Boundaries']['FCFS']['data']
+        return self.data["Boundaries"]["FCFS"]["data"]
 
     def get_lcfs(self):
-        return self.data['Boundaries']['LFCS']['data']
+        return self.data["Boundaries"]["LFCS"]["data"]
 
 
 def traverse(hdf_file):
@@ -87,17 +87,18 @@ def traverse(hdf_file):
     Returns:
         None
     """
-    def h5py_dataset_iterator(g, prefix=''):
+
+    def h5py_dataset_iterator(g, prefix=""):
         for key in g.keys():
             item = g[key]
-            path = '{}/{}'.format(prefix, key)
+            path = "{}/{}".format(prefix, key)
             if isinstance(item, h5py.Dataset):  # test for dataset
                 yield (path, item)
             elif isinstance(item, h5py.Group):  # test for group (go down)
                 yield from h5py_dataset_iterator(item, path)
 
-    with h5py.File(hdf_file, 'r') as f:
-        for (path, dset) in h5py_dataset_iterator(f):
+    with h5py.File(hdf_file, "r") as f:
+        for path, dset in h5py_dataset_iterator(f):
             print(path, dset)
 
     return None
@@ -112,16 +113,22 @@ def print_dict_structure(d, indent=0):
     for k, v in d.items():
         prefix = "    " * indent + f"- {k}: "
         if isinstance(v, dict):
-            if 'data' not in v.keys():
+            if "data" not in v.keys():
                 print(prefix)
                 print_dict_structure(v, indent + 1)
             else:
-                if isinstance(v['data'], np.ndarray):
-                    print(prefix + f"ndarray, shape={v['data'].shape}, dtype={v['data'].dtype}" + " [{}]".format(
-                        v["units"] if "units" in v.keys() else "N/A"))
+                if isinstance(v["data"], np.ndarray):
+                    print(
+                        prefix
+                        + f"ndarray, shape={v['data'].shape}, dtype={v['data'].dtype}"
+                        + " [{}]".format(v["units"] if "units" in v.keys() else "N/A")
+                    )
                 else:
-                    print(prefix + f"{type(v['data']).__name__}" + " [{}]".format(
-                        v["units"] if "units" in v.keys() else "N/A"))
+                    print(
+                        prefix
+                        + f"{type(v['data']).__name__}"
+                        + " [{}]".format(v["units"] if "units" in v.keys() else "N/A")
+                    )
         else:
             print(prefix + f"{v}")
 
