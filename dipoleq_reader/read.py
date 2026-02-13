@@ -1,6 +1,6 @@
-
 import h5py
 import numpy as np
+
 
 def h5_to_dict_recursive(h5_object):
     """
@@ -16,7 +16,7 @@ def h5_to_dict_recursive(h5_object):
         dict: A nested dictionary representation of the HDF5 object, where datasets
         are stored as numpy arrays and groups are represented as nested dictionaries.
     """
-    result = {}
+    result: dict = {}
     for key, item in h5_object.items():
         if isinstance(item, h5py.Dataset):
             # If it's a dataset, get the data as a numpy array
@@ -126,8 +126,8 @@ def print_dict_structure(d, indent=0):
             print(prefix + f"{v}")
 
 
-# Example usage:
-fn = "/Users/Jerome.Guterl/development/dipole_hermes_mesh/test.h5"
+# # Example usage:
+# fn = "/Users/Jerome.Guterl/development/dipole_hermes_mesh/test.h5"
 
-dpeq = DPEqReader(fn)
-print_dict_structure(dpeq.data)
+# dpeq = DPEqReader(fn)
+# print_dict_structure(dpeq.data)

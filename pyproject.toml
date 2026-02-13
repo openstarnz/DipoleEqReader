@@ -26,9 +26,9 @@ dependencies = [
 license = {file = "LICENSE"}
 
 [project.urls]
-Homepage = "https://github.com/openstar/DipoleEqReader"
-Repository = "https://github.com/openstar/DipoleEqReader"
-Changelog = "https://github.com/openstar/DipoleEqReader/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/openstarnz/DipoleEqReader"
+Repository = "https://github.com/openstarnz/DipoleEqReader"
+Changelog = "https://github.com/openstarnz/DipoleEqReader/blob/main/CHANGELOG.md"
 # Documentation = "https://dipoleq-reader.readthedocs.io/"
 
 [project.optional-dependencies]
