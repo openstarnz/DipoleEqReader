@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 # See https://setuptools.pypa.io/en/latest/userguide/quickstart.html for more project configuration options.
-name = "my-package"
+name = "dipoleq-reader"
 dynamic = ["version"]
 readme = "README.md"
 classifiers = [
@@ -15,19 +15,21 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 authors = [
-    {name = "Allen Institute for Artificial Intelligence", email = "contact@allenai.org"}
+    {name = "Jerome Guiterl", email = "jerome.guterl@openstar.tech"}
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-  # Add your own dependencies here
+  "numpy",
+  "h5py",
+  "matplotlib"
 ]
 license = {file = "LICENSE"}
 
 [project.urls]
-Homepage = "https://github.com/allenai/python-package-template"
-Repository = "https://github.com/allenai/python-package-template"
-Changelog = "https://github.com/allenai/python-package-template/blob/main/CHANGELOG.md"
-# Documentation = "https://my-package.readthedocs.io/"
+Homepage = "https://github.com/openstar/DipoleEqReader"
+Repository = "https://github.com/openstar/DipoleEqReader"
+Changelog = "https://github.com/openstar/DipoleEqReader/blob/main/CHANGELOG.md"
+# Documentation = "https://dipoleq-reader.readthedocs.io/"
 
 [project.optional-dependencies]
 dev = [
@@ -65,10 +67,10 @@ exclude = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-my_package = ["py.typed"]
+dipoleq_reader = ["py.typed"]
 
 [tool.setuptools.dynamic]
-version = {attr = "my_package.version.VERSION"}
+version = {attr = "dipoleq_reader.version.VERSION"}
 
 [tool.black]
 line-length = 100

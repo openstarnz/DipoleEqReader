@@ -2,7 +2,7 @@
 
 set -e
 
-TAG=$(python -c 'from my_package.version import VERSION; print("v" + VERSION)')
+TAG=$(python -c 'from dipoleq_reader.version import VERSION; print("v" + VERSION)')
 
 read -p "Creating new release for $TAG. Do you want to continue? [Y/n] " prompt
 
