@@ -21,7 +21,8 @@ requires-python = ">=3.10"
 dependencies = [
   "numpy",
   "h5py",
-  "matplotlib"
+  "matplotlib",
+    "contourpy"
 ]
 license = {file = "LICENSE"}
 

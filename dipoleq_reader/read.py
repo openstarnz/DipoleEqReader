@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 import contourpy
+import os
 
 
 def h5_to_dict_recursive(h5_object):
@@ -42,6 +43,8 @@ class DPEqFile:
     def __init__(self, filename):
         self.data = {}
         try:
+            if not os.path.exists(filename):
+                raise FileNotFoundError(f"File not found: {filename}")
             with h5py.File(filename, "r") as h5f:
                 data = h5_to_dict_recursive(h5f)
                 for k, v in h5f.attrs.items():
