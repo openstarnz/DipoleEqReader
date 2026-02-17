@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+import contourpy
 
 
 def h5_to_dict_recursive(h5_object):
@@ -37,7 +38,7 @@ def h5_to_dict_recursive(h5_object):
     return result
 
 
-class DPEqReader:
+class DPEqFile:
     def __init__(self, filename):
         self.data = {}
         try:
@@ -49,14 +50,22 @@ class DPEqReader:
                 self.data = data
         except Exception as e:
             print(f"Error reading HDF5 file: {e}")
+    def traverse(self):
+        print_dict_structure(self.data)
 
-    def get_R(self):
+    def get_r(self, transpose=False):
+        if transpose:
+            return self.data["Grid"]["R"]["data"].T
         return self.data["Grid"]["R"]["data"]
 
-    def get_Z(self):
+    def get_z(self, transpose=False):
+        if transpose:
+            return self.data["Grid"]["Z"]["data"].T
         return self.data["Grid"]["Z"]["data"]
 
-    def get_psi(self):
+    def get_psirz(self, transpose=False):
+        if transpose:
+            return self.data["Grid"]["Psi"]["data"].T
         return self.data["Grid"]["Psi"]["data"]
 
     def get_Bp_r(self):
@@ -76,6 +85,62 @@ class DPEqReader:
 
     def get_lcfs(self):
         return self.data["Boundaries"]["LFCS"]["data"]
+
+    def get_z0_idx(self):
+        z0 = self.data["Scalars"]["Z0"]["data"]
+        Z = self.get_Z()
+        return np.argmin(np.abs(Z - z0))
+
+    def get_psi_rmp(self,r):
+        if r == 'fcfs':
+            return self.data["Scalars"]["PsiFCFS"]["data"]
+        elif r == 'lcfs':
+            return self.data["Scalars"]["PsiLCFS"]["data"]
+        else:
+            return np.interp(r, self.get_r(), self.get_psirz()[:, self.get_z0_idx()]) # to be fixed
+
+    def get_psi_contour(self,psi_ref, n_points=1000, closed=False):
+        r_psi = self.get_r()
+        z_psi = self.get_z()
+        psirz = self.get_psirz()
+        print("psi_ref", psi_ref)
+        contour_generator = contourpy.contour_generator(r_psi, z_psi, psirz, name='serial', total_chunk_count=1)
+        if closed:
+            return [np.array(c[:-1,:]) for c in contour_generator.contour(psi_ref, n_points=n_points, unique=unique)]
+        else:
+            return [np.array(c[:-2,:]) for c in contour_generator.lines(psi_ref)]
+
+    def get_rmin(self):
+        return np.min(self.get_r())
+    def get_rmax(self):
+        return np.max(self.get_r())
+    def get_zmin(self):
+        return np.min(self.get_z())
+    def get_zmax(self):
+        return np.max(self.get_z())
+
+    def get_outerwall(self,format='segments'):
+        if format == 'r-z':
+            olim = self.data["Boundaries"]["olim"]["data"]
+            return (olim[:, 1, 0].flatten(), olim[:, 1, 1].flatten())
+        elif format == 'segments':
+            return self.data["Boundaries"]["olim"]["data"]
+
+
+    def get_innerwall(self):
+        return self.data["Boundaries"]["ilim"]["data"]
+
+    def _add_psi_interpolator(self):
+        from scipy.interpolate import RegularGridInterpolator
+
+        R = self.get_r()
+        Z = self.get_z()
+        Psirz = self.get_psirz()
+
+        # Create a 2D interpolator for Psi
+        self.psi_interpolator = RegularGridInterpolator((R, Z), Psirz)
+
+
 
 
 def traverse(hdf_file):
