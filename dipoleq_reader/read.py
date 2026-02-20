@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import contourpy
 import os
-
+from scipy.ndimage import zoom
 
 def h5_to_dict_recursive(h5_object):
     """
@@ -52,24 +52,32 @@ class DPEqFile:
                 data["filename"] = filename
                 self.data = data
         except Exception as e:
-            print(f"Error reading HDF5 file: {e}")
+            raise RuntimeError(f"Error reading dipole equilibrium file {filename}: {e}")
+
     def traverse(self):
         print_dict_structure(self.data)
 
-    def get_r(self, transpose=False):
+    def get_r(self, transpose=False, zoom_factor=1 ):
+        arr = self.data["Grid"]["R"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
         if transpose:
-            return self.data["Grid"]["R"]["data"].T
-        return self.data["Grid"]["R"]["data"]
+            return arr.T
+        return arr
 
-    def get_z(self, transpose=False):
+    def get_z(self, transpose=False, zoom_factor=1):
+        arr = self.data["Grid"]["Z"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
         if transpose:
-            return self.data["Grid"]["Z"]["data"].T
-        return self.data["Grid"]["Z"]["data"]
+            return arr.T
+        return arr
 
-    def get_psirz(self, transpose=False):
+# Zoom factor of 2 to create a 4x4 matrix
+    def get_psirz(self, transpose=False, zoom_factor=1):
+        arr = self.data["Grid"]["Psi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
         if transpose:
-            return self.data["Grid"]["Psi"]["data"].T
-        return self.data["Grid"]["Psi"]["data"]
+            return arr.T
+        return arr
 
     def get_Bp_r(self):
         return self.data["Grid"]["Bp_R"]["data"]
@@ -102,16 +110,34 @@ class DPEqFile:
         else:
             return np.interp(r, self.get_r(), self.get_psirz()[:, self.get_z0_idx()]) # to be fixed
 
-    def get_psi_contour(self,psi_ref, n_points=1000, closed=False):
+    def get_psi_contour(self,psi_ref, n_points=1000, closed=False, rotate=None):
         r_psi = self.get_r()
         z_psi = self.get_z()
         psirz = self.get_psirz()
         print("psi_ref", psi_ref)
         contour_generator = contourpy.contour_generator(r_psi, z_psi, psirz, name='serial', total_chunk_count=1)
         if closed:
-            return [np.array(c[:-1,:]) for c in contour_generator.contour(psi_ref, n_points=n_points, unique=unique)]
+            arr = [np.array(c[:,:]) for c in contour_generator.lines(psi_ref)]
         else:
-            return [np.array(c[:-2,:]) for c in contour_generator.lines(psi_ref)]
+            arr = [np.array(c[:-2,:]) for c in contour_generator.lines(psi_ref)]
+        # rotate the contour to start at the point closest to the required starting point
+        if rotate is not None:
+            if rotate == 'omp':
+                rotate_point = (np.max(self.get_r()),self.data["Scalars"]["Z0"]["data"])  # point at the OMP, assuming it's at the same R as the O-point
+            elif rotate == 'imp':
+                rotate_point = (np.min(self.get_r()),self.data["Scalars"]["Z0"]["data"]) # point at the IMP, assuming it's at the same R as the O-point
+            else:
+                raise ValueError(f"Invalid rotate option: {rotate}")
+
+            arr_rotated = []
+            for c in arr:
+                dists = np.sqrt((c[:,0] - rotate_point[0])**2 + (c[:,1] - rotate_point[1])**2)
+                idx_start = np.argmin(dists)
+                print(idx_start, c[idx_start], rotate_point)
+                c_rotated = np.roll(c, -idx_start, axis=0)
+                arr_rotated.append(c_rotated)
+            return arr_rotated
+        return arr
 
     def get_rmin(self):
         return np.min(self.get_r())
