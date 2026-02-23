@@ -200,6 +200,8 @@ def print_dict_structure(d, indent=0):
         else:
             print(prefix + f"{v}")
 
+def read_eqfile(fn):
+    return DPEqFile(fn)
 
 # # Example usage:
 # fn = "/Users/Jerome.Guterl/development/dipole_hermes_mesh/test.h5"
