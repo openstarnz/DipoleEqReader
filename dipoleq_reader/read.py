@@ -56,6 +56,11 @@ class DPEqFile:
 
     def traverse(self):
         print_dict_structure(self.data)
+        
+    def get_psin(self):
+        psi = self.data["FluxFunctions"]["psi"]["data"]
+        psin = (psi - psi[0]) / (psi[-1] - psi[0])
+        return psin
 
     def get_r(self, transpose=False, zoom_factor=1 ):
         arr = self.data["Grid"]["R"]["data"]
@@ -70,6 +75,90 @@ class DPEqFile:
         if transpose:
             return arr.T
         return arr
+    
+    def get_vol(self, transpose=False, zoom_factor=1):
+        arr = self.data["FluxFunctions"]["Vpsi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if transpose:
+            return arr.T
+        return arr
+
+    
+
+    
+    def get_dvdpsi(self, transpose=False, zoom_factor=1):
+        arr = self.data["FluxFunctions"]["Vprime"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if transpose:
+            return arr.T
+        return arr
+    
+        
+    def get_psi_1d(self, transpose=False, zoom_factor=1):
+        arr = self.data["FluxFunctions"]["psi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if transpose:
+            return arr.T
+        return arr
+    
+    def get_psin_1d(self, transpose=False, zoom_factor=1):
+        arr = self.data["FluxFunctions"]["psi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        arr = (arr - arr[0]) / (arr[-1] - arr[0])
+        if transpose:
+            return arr.T
+        return arr
+    
+    def get_p_1d(self, transpose=False, zoom_factor=1):
+        arr = self.data["FluxFunctions"]["ppsi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if transpose:
+            return arr.T
+        return arr
+
+    # def get_n(eq, unit="m^-3"):
+    #     """Get the density profile from the equilibrium
+
+    #     Args:
+    #         eq: H5Machine or Machine
+    #             The equilibrium object
+    #     Returns:
+    #         n: np.ndarray
+    #             The density profile in m^-3
+    #     """    
+    #     assert unit in ["cm^-3","m^-3"], "Invalid unit for density. Must be 'cm^-3' or 'm^-3'."
+    #     assert "profiles" in eq.data.keys() and "n" in eq.data["profiles"].keys(), "Equilibrium object must have a 'data' attribute with a 'profiles' attribute containing 'n' for density."   
+    #     if unit == "cm^-3":
+    #         return eq.data["profiles"]["n"]["data"] * 1e-6
+    #     return eq.data["profiles"]["n"]["data"]
+
+    # def get_Te(eq, unit="eV"):
+    #     """Get the temperature profile from the equilibrium
+
+    #     Args:
+    #         eq: H5Machine or Machine
+    #             The equilibrium object
+    #     Returns:
+    #         T: np.ndarray
+    #             The temperature profile in eV
+    #     """    
+    #     print_warning("Assuming Ti = Te! TODO: add option to specify Ti separately from Te")
+    #     assert unit in ["eV"], "Invalid unit for temperature. Must be 'eV'."
+    #     return eq.profiles.T_eq/2 # assume Ti = Te! TODO: add option to specify Ti separately from Te
+
+    # def get_Ti(eq, unit="eV"):
+    #     """Get the ion temperature profile from the equilibrium
+
+    #     Args:
+    #         eq: H5Machine or Machine
+    #             The equilibrium object
+    #     Returns:        T: np.ndarray
+    #             The ion temperature profile in eV
+    #     """    
+    #     print_warning("Assuming Ti = Te! TODO: add option to specify Ti separately from Te")
+    #     assert unit in ["eV"], "Invalid unit for temperature. Must be 'eV'."
+    #     return eq.profiles.T_eq/2  # assume Ti = Te! TODO: add option to specify Ti separately from Te
+
 
 # Zoom factor of 2 to create a 4x4 matrix
     def get_psirz(self, transpose=False, zoom_factor=1):
