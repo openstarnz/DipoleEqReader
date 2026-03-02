@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 import contourpy
 import os
+from scipy.constants import psi
 from scipy.ndimage import zoom
 
 def h5_to_dict_recursive(h5_object):
@@ -61,6 +62,22 @@ class DPEqFile:
         psi = self.data["FluxFunctions"]["psi"]["data"]
         psin = (psi - psi[0]) / (psi[-1] - psi[0])
         return psin
+
+    def get_psi_fcfs(self):
+        return self.data["Scalars"]["PsiFCFS"]["data"]
+    
+    def get_psi_lcfs(self):
+        return self.data["Scalars"]["PsiLCFS"]["data"]
+    
+    def get_psi_peak(self):
+        idx_max = np.argmax(self.data["FluxFunctions"]["ppsi"]["data"])
+        return self.data["FluxFunctions"]["psi"]["data"][idx_max]
+    
+    
+
+    
+
+
 
     def get_r(self, transpose=False, zoom_factor=1 ):
         arr = self.data["Grid"]["R"]["data"]
