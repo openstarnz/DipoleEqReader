@@ -1,10 +1,14 @@
+from dask.array.tests.test_shuffle import arr
 import h5py
+from inductance import self
 import numpy as np
 import contourpy
 import os
-from scipy.constants import psi
-from scipy.ndimage import zoom
 
+from scipy.ndimage import zoom
+from dipoleq_reader.plot import DPEqPlotter
+from scipy.interpolate import RegularGridInterpolator, RectBivariateSpline
+import scipy
 def h5_to_dict_recursive(h5_object):
     """
     Recursively convert an HDF5 group or file into a nested dictionary.
@@ -40,8 +44,9 @@ def h5_to_dict_recursive(h5_object):
     return result
 
 
-class DPEqFile:
+class DPEqFile(DPEqPlotter):
     def __init__(self, filename):
+        super().__init__()
         self.data = {}
         try:
             if not os.path.exists(filename):
@@ -65,6 +70,24 @@ class DPEqFile:
 
     def get_psi_fcfs(self):
         return self.data["Scalars"]["PsiFCFS"]["data"]
+    
+    def get_rmp_fcfs(self, location="outer"):
+        coords = self.get_fcfs()
+        r = coords[:, 0]
+        if location == "outer":
+            return np.max(r)
+        elif location == "inner":
+            return np.min(r)
+    
+    def get_rmp_lcfs(self, location="outer"):
+        coords = self.get_lcfs()
+        r = coords[:, 0]
+        if location == "outer":
+            return np.max(r)
+        elif location == "inner":
+            return np.min(r)
+    
+
     
     def get_psi_lcfs(self):
         return self.data["Scalars"]["PsiLCFS"]["data"]
@@ -110,20 +133,40 @@ class DPEqFile:
             return arr.T
         return arr
     
-        
-    def get_psi_1d(self, transpose=False, zoom_factor=1):
-        arr = self.data["FluxFunctions"]["psi"]["data"]
-        arr = zoom(arr, zoom_factor, order=1)
+    
+    def get_dvdpsi_2d(self,transpose=False, divide_by_twopi=False):
+        psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
+        dvdpsi_ = self.data["FluxFunctions"]["Vprime"]["data"] 
+        psi = self.get_psi_1d(divide_by_twopi=divide_by_twopi)
+        dvdpsi_interp = scipy.interpolate.CubicSpline(psi,dvdpsi_)       
+        arr = dvdpsi_interp(psirz)
         if transpose:
             return arr.T
         return arr
     
-    def get_psin_1d(self, transpose=False, zoom_factor=1):
+    def get_dvdpsi_interp(self, divide_by_twopi=False):
+        psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
+        dvdpsi_ = self.data["FluxFunctions"]["Vprime"]["data"] 
+        psi = self.get_psi_1d(divide_by_twopi=divide_by_twopi)
+        return scipy.interpolate.CubicSpline(psi,dvdpsi_)
+       
+    def get_r_1d(self,  zoom_factor=1):
+        arr = self.data["FluxFunctions"]["RBetaMax"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        return arr
+    
+    def get_psi_1d(self, zoom_factor=1, divide_by_twopi=False):
+        arr = self.data["FluxFunctions"]["psi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if divide_by_twopi:
+            arr = arr / (2 * np.pi)
+        return arr
+    
+    
+    def get_psin_1d(self, zoom_factor=1):
         arr = self.data["FluxFunctions"]["psi"]["data"]
         arr = zoom(arr, zoom_factor, order=1)
         arr = (arr - arr[0]) / (arr[-1] - arr[0])
-        if transpose:
-            return arr.T
         return arr
     
     def get_p_1d(self, transpose=False, zoom_factor=1):
@@ -178,12 +221,33 @@ class DPEqFile:
 
 
 # Zoom factor of 2 to create a 4x4 matrix
-    def get_psirz(self, transpose=False, zoom_factor=1):
+    def get_psirz(self, transpose=False, zoom_factor=1, divide_by_twopi=False):
         arr = self.data["Grid"]["Psi"]["data"]
+        arr = zoom(arr, zoom_factor, order=1)
+        if divide_by_twopi:
+            arr = arr / (2 * np.pi)
+        if transpose:
+            return arr.T
+        return arr
+    
+    def get_p_rz(self, transpose=False, zoom_factor=1):
+        arr = self.data["Grid"]["Pressure"]["data"]
         arr = zoom(arr, zoom_factor, order=1)
         if transpose:
             return arr.T
         return arr
+    
+    def get_psi_func(self):
+        r = self.get_r()
+        z = self.get_z()
+        
+        return RectBivariateSpline(r, z, self.get_psi_rz(transpose=True))
+    
+    def get_p_func(self):
+        r = self.get_r()
+        z = self.get_z()
+        
+        return RectBivariateSpline(r, z, self.get_p_rz(transpose=True))
 
     def get_Bp_r(self):
         return self.data["Grid"]["Bp_R"]["data"]
@@ -201,25 +265,33 @@ class DPEqFile:
         return self.data["Boundaries"]["FCFS"]["data"]
 
     def get_lcfs(self):
-        return self.data["Boundaries"]["LFCS"]["data"]
+        return self.data["Boundaries"]["LCFS"]["data"]
 
     def get_z0_idx(self):
         z0 = self.data["Scalars"]["Z0"]["data"]
         Z = self.get_Z()
         return np.argmin(np.abs(Z - z0))
+    
+    def get_z0(self):
+        return self.data["Scalars"]["Z0"]["data"]
 
-    def get_psi_rmp(self,r):
+
+    def get_psi_rmp(self,r, divide_by_twopi=False):
         if r == 'fcfs':
+            if divide_by_twopi:
+                return self.data["Scalars"]["PsiFCFS"]["data"] / (2 * np.pi)
             return self.data["Scalars"]["PsiFCFS"]["data"]
         elif r == 'lcfs':
+            if divide_by_twopi:
+                return self.data["Scalars"]["PsiLCFS"]["data"] / (2 * np.pi)
             return self.data["Scalars"]["PsiLCFS"]["data"]
         else:
-            return np.interp(r, self.get_r(), self.get_psirz()[:, self.get_z0_idx()]) # to be fixed
+            return np.interp(r, self.get_r(), self.get_psirz(divide_by_twopi=divide_by_twopi)[:, self.get_z0_idx()]) # to be fixed
 
-    def get_psi_contour(self,psi_ref, n_points=1000, closed=False, rotate=None):
+    def get_psi_contour(self,psi_ref, n_points=1000, closed=False, rotate=None, divide_by_twopi=False):
         r_psi = self.get_r()
         z_psi = self.get_z()
-        psirz = self.get_psirz()
+        psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
         print("psi_ref", psi_ref)
         contour_generator = contourpy.contour_generator(r_psi, z_psi, psirz, name='serial', total_chunk_count=1)
         if closed:
@@ -265,12 +337,12 @@ class DPEqFile:
     def get_innerwall(self):
         return self.data["Boundaries"]["ilim"]["data"]
 
-    def _add_psi_interpolator(self):
+    def _add_psi_interpolator(self, divide_by_twopi=False ):
         from scipy.interpolate import RegularGridInterpolator
 
         R = self.get_r()
         Z = self.get_z()
-        Psirz = self.get_psirz()
+        Psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
 
         # Create a 2D interpolator for Psi
         self.psi_interpolator = RegularGridInterpolator((R, Z), Psirz)
