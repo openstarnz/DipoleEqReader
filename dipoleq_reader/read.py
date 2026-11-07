@@ -1,12 +1,28 @@
-from dask.array.tests.test_shuffle import arr
+"""Read DipoleQ HDF5 equilibria and baseline exports.
+
+Example for a native DipoleQ HDF5 file::
+
+    import matplotlib.pyplot as plt
+    from dipoleq_reader.read import DPEqFile
+
+    eq = DPEqFile("equilibrium.h5")
+    plt.contour(eq.get_r(), eq.get_z(), eq.get_psirz())
+    plt.xlabel("R [m]")
+    plt.ylabel("Z [m]")
+    plt.show()
+
+Native DipoleQ grids are stored in (Z, R) order. Baseline exports store
+their grids in (R, Z) order; use ``eq.get_psirz(transpose=True)`` when
+plotting a baseline export with R on the horizontal axis.
+"""
+
 import h5py
-from inductance import self
 import numpy as np
 import contourpy
 import os
 
 from scipy.ndimage import zoom
-from dipoleq_reader.plot import DPEqPlotter
+from .plot import DPEqPlotter
 from scipy.interpolate import RegularGridInterpolator, RectBivariateSpline
 import scipy
 def h5_to_dict_recursive(h5_object):
@@ -64,9 +80,18 @@ class DPEqFile(DPEqPlotter):
         print_dict_structure(self.data)
         
     def get_psin(self):
-        psi = self.data["FluxFunctions"]["psi"]["data"]
-        psin = (psi - psi[0]) / (psi[-1] - psi[0])
-        return psin
+        # Native DipoleEq files store psi under FluxFunctions; baseline exports
+        # use a one-dimensional psi_1d profile at the file root.
+        if "FluxFunctions" in self.data:
+            psi = np.asarray(self.data["FluxFunctions"]["psi"]["data"])
+            psi_axis, psi_edge = psi[0], psi[-1]
+        elif "psi_1d" in self.data:
+            psi = np.asarray(self.data["psi_1d"]["data"])
+            psi_axis = np.asarray(self.data["simagx"]["data"]).item()
+            psi_edge = np.asarray(self.data["sibdry"]["data"]).item()
+        else:
+            raise KeyError("Could not find a 1D flux profile to compute normalized psi")
+        return (psi - psi_axis) / (psi_edge - psi_axis)
 
     def get_psi_fcfs(self):
         return self.data["Scalars"]["PsiFCFS"]["data"]
@@ -103,14 +128,16 @@ class DPEqFile(DPEqPlotter):
 
 
     def get_r(self, transpose=False, zoom_factor=1 ):
-        arr = self.data["Grid"]["R"]["data"]
+        arr = (self.data["Grid"]["R"]["data"] if "Grid" in self.data
+               else self._get_profile("R"))
         arr = zoom(arr, zoom_factor, order=1)
         if transpose:
             return arr.T
         return arr
 
     def get_z(self, transpose=False, zoom_factor=1):
-        arr = self.data["Grid"]["Z"]["data"]
+        arr = (self.data["Grid"]["Z"]["data"] if "Grid" in self.data
+               else self._get_profile("Z"))
         arr = zoom(arr, zoom_factor, order=1)
         if transpose:
             return arr.T
@@ -156,18 +183,16 @@ class DPEqFile(DPEqPlotter):
         return arr
     
     def get_psi_1d(self, zoom_factor=1, divide_by_twopi=False):
-        arr = self.data["FluxFunctions"]["psi"]["data"]
+        arr = (self.data["FluxFunctions"]["psi"]["data"] if "FluxFunctions" in self.data
+               else self._get_profile("psi_1d"))
         arr = zoom(arr, zoom_factor, order=1)
-        if divide_by_twopi:
+        if divide_by_twopi and ("FluxFunctions" in self.data or self._get_cocos() >= 10):
             arr = arr / (2 * np.pi)
         return arr
     
     
     def get_psin_1d(self, zoom_factor=1):
-        arr = self.data["FluxFunctions"]["psi"]["data"]
-        arr = zoom(arr, zoom_factor, order=1)
-        arr = (arr - arr[0]) / (arr[-1] - arr[0])
-        return arr
+        return zoom(self.get_psin(), zoom_factor, order=1)
     
     def get_p_1d(self, transpose=False, zoom_factor=1):
         arr = self.data["FluxFunctions"]["ppsi"]["data"]
@@ -176,55 +201,53 @@ class DPEqFile(DPEqPlotter):
             return arr.T
         return arr
 
-    # def get_n(eq, unit="m^-3"):
-    #     """Get the density profile from the equilibrium
+    def _get_profile(self, name):
+        """Return a profile dataset from either supported equilibrium layout."""
+        # DipoleEq files use named groups, while baseline exports store profiles
+        # at the file root. Accept both, case-insensitively.
+        for group_name in ("Profiles", "profiles"):
+            group = self.data.get(group_name)
+            if isinstance(group, dict):
+                for key, value in group.items():
+                    if key.lower() == name.lower():
+                        return np.asarray(value["data"] if isinstance(value, dict) and "data" in value else value)
+        for key, value in self.data.items():
+            if key.lower() == name.lower() and isinstance(value, dict) and "data" in value:
+                return np.asarray(value["data"])
+        raise KeyError(f"Profile '{name}' was not found in the equilibrium data")
 
-    #     Args:
-    #         eq: H5Machine or Machine
-    #             The equilibrium object
-    #     Returns:
-    #         n: np.ndarray
-    #             The density profile in m^-3
-    #     """    
-    #     assert unit in ["cm^-3","m^-3"], "Invalid unit for density. Must be 'cm^-3' or 'm^-3'."
-    #     assert "profiles" in eq.data.keys() and "n" in eq.data["profiles"].keys(), "Equilibrium object must have a 'data' attribute with a 'profiles' attribute containing 'n' for density."   
-    #     if unit == "cm^-3":
-    #         return eq.data["profiles"]["n"]["data"] * 1e-6
-    #     return eq.data["profiles"]["n"]["data"]
+    def get_ne(self, unit="m^-3"):
+        """Get electron density in ``m^-3`` or ``cm^-3``."""
+        if unit not in ("m^-3", "cm^-3"):
+            raise ValueError("Invalid density unit; expected 'm^-3' or 'cm^-3'.")
+        ne = self._get_profile("ne")
+        return ne if unit == "m^-3" else ne * 1e-6
 
-    # def get_Te(eq, unit="eV"):
-    #     """Get the temperature profile from the equilibrium
+    def get_Te(self, unit="eV"):
+        """Get the electron temperature profile in eV."""
+        if unit not in ("eV", "keV"):
+            raise ValueError("Invalid temperature unit; expected 'eV' or 'keV'.")
+        te = self._get_profile("Te")
+        return te if unit == "eV" else te / 1e3
 
-    #     Args:
-    #         eq: H5Machine or Machine
-    #             The equilibrium object
-    #     Returns:
-    #         T: np.ndarray
-    #             The temperature profile in eV
-    #     """    
-    #     print_warning("Assuming Ti = Te! TODO: add option to specify Ti separately from Te")
-    #     assert unit in ["eV"], "Invalid unit for temperature. Must be 'eV'."
-    #     return eq.profiles.T_eq/2 # assume Ti = Te! TODO: add option to specify Ti separately from Te
-
-    # def get_Ti(eq, unit="eV"):
-    #     """Get the ion temperature profile from the equilibrium
-
-    #     Args:
-    #         eq: H5Machine or Machine
-    #             The equilibrium object
-    #     Returns:        T: np.ndarray
-    #             The ion temperature profile in eV
-    #     """    
-    #     print_warning("Assuming Ti = Te! TODO: add option to specify Ti separately from Te")
-    #     assert unit in ["eV"], "Invalid unit for temperature. Must be 'eV'."
-    #     return eq.profiles.T_eq/2  # assume Ti = Te! TODO: add option to specify Ti separately from Te
+    def get_Ti(self, unit="eV"):
+        """Get the ion temperature profile in eV."""
+        if unit not in ("eV", "keV"):
+            raise ValueError("Invalid temperature unit; expected 'eV' or 'keV'.")
+        ti = self._get_profile("Ti")
+        return ti if unit == "eV" else ti / 1e3
 
 
 # Zoom factor of 2 to create a 4x4 matrix
     def get_psirz(self, transpose=False, zoom_factor=1, divide_by_twopi=False):
-        arr = self.data["Grid"]["Psi"]["data"]
+        """Return the stored flux grid; transpose only when requested.
+
+        DipoleQ stores (Z, R), while baseline GEQDSK exports store (R, Z).
+        """
+        arr = (self.data["Grid"]["Psi"]["data"] if "Grid" in self.data
+               else self._get_profile("psi"))
         arr = zoom(arr, zoom_factor, order=1)
-        if divide_by_twopi:
+        if divide_by_twopi and ("Grid" in self.data or self._get_cocos() >= 10):
             arr = arr / (2 * np.pi)
         if transpose:
             return arr.T
@@ -241,7 +264,7 @@ class DPEqFile(DPEqPlotter):
         r = self.get_r()
         z = self.get_z()
         
-        return RectBivariateSpline(r, z, self.get_psi_rz(transpose=True))
+        return RectBivariateSpline(r, z, self.get_psirz(transpose="Grid" in self.data))
     
     def get_p_func(self):
         r = self.get_r()
@@ -249,27 +272,77 @@ class DPEqFile(DPEqPlotter):
         
         return RectBivariateSpline(r, z, self.get_p_rz(transpose=True))
 
-    def get_Bp_r(self):
-        return self.data["Grid"]["Bp_R"]["data"]
+    def get_Bp_r(self, transpose=False):
+        if "Grid" in self.data and "Bp_R" in self.data["Grid"]:
+            arr = self.data["Grid"]["Bp_R"]["data"]
+        else:
+            # Baseline GEQDSK grids are (R, Z).
+            psi = self.get_psirz()
+            r = self.get_r()
+            z = self.get_z()
+            dpsi_dz = np.gradient(psi, z, axis=1)
+            sigma_bp, flux_factor = self._cocos_bp_convention()
+            orientation = 1 if self._get_cocos() % 2 else -1
+            arr = orientation * sigma_bp * dpsi_dz / (flux_factor * r[:, np.newaxis])
+        return arr.T if transpose else arr
 
-    def get_Bp_z(self):
-        return self.data["Grid"]["Bp_Z"]["data"]
+    def get_Bp_z(self, transpose=False):
+        if "Grid" in self.data and "Bp_Z" in self.data["Grid"]:
+            arr = self.data["Grid"]["Bp_Z"]["data"]
+        else:
+            psi = self.get_psirz()
+            r = self.get_r()
+            dpsi_dr = np.gradient(psi, r, axis=0)
+            sigma_bp, flux_factor = self._cocos_bp_convention()
+            orientation = 1 if self._get_cocos() % 2 else -1
+            arr = -orientation * sigma_bp * dpsi_dr / (flux_factor * r[:, np.newaxis])
+        return arr.T if transpose else arr
+
+    def _get_cocos(self):
+        """Read the COCOS index stored as a root attribute or scalar dataset."""
+        value = self.data.get("cocos", self.data.get("COCOS"))
+        if value is None:
+            raise ValueError("Cannot derive magnetic field: equilibrium has no COCOS metadata")
+        return int(np.asarray(value).item())
+
+    def _cocos_bp_convention(self):
+        cocos = self._get_cocos()
+        index = cocos % 10
+        if index not in range(1, 9):
+            raise ValueError(f"Unsupported COCOS index {cocos}")
+        # COCOS 1-8 store flux per radian; 11-18 store full poloidal flux.
+        flux_factor = 2 * np.pi if cocos >= 10 else 1.0
+        # Table I of the COCOS convention: sigma_Bp is negative for 3, 4, 7, 8.
+        sigma_bp = -1 if index in (3, 4, 7, 8) else 1
+        return sigma_bp, flux_factor
 
     def get_inner_wall(self):
-        return self.data["Boundaries"]["ilim"]["data"]
+        if "Boundaries" in self.data:
+            return self.data["Boundaries"]["ilim"]["data"]
+        return np.column_stack((self._get_profile("rlimi"), self._get_profile("zlimi")))
 
     def get_outer_wall(self):
-        return self.data["Boundaries"]["olim"]["data"]
+        if "Boundaries" in self.data:
+            return self.data["Boundaries"]["olim"]["data"]
+        return np.column_stack((self._get_profile("rlim"), self._get_profile("zlim")))
 
     def get_fcfs(self):
-        return self.data["Boundaries"]["FCFS"]["data"]
+        if "Boundaries" in self.data:
+            return self.data["Boundaries"]["FCFS"]["data"]
+        # Baseline exports name the first closed flux surface the inner boundary.
+        return np.column_stack((self._get_profile("ribdry"), self._get_profile("zibdry")))
 
     def get_lcfs(self):
-        return self.data["Boundaries"]["LCFS"]["data"]
+        if "Boundaries" in self.data:
+            return self.data["Boundaries"]["LCFS"]["data"]
+        # Baseline exports store the LCFS as separate boundary coordinates.
+        r = self._get_profile("rbdry")
+        z = self._get_profile("zbdry")
+        return np.column_stack((r, z))
 
     def get_z0_idx(self):
         z0 = self.data["Scalars"]["Z0"]["data"]
-        Z = self.get_Z()
+        Z = self.get_z()
         return np.argmin(np.abs(Z - z0))
     
     def get_z0(self):
@@ -286,12 +359,15 @@ class DPEqFile(DPEqPlotter):
                 return self.data["Scalars"]["PsiLCFS"]["data"] / (2 * np.pi)
             return self.data["Scalars"]["PsiLCFS"]["data"]
         else:
-            return np.interp(r, self.get_r(), self.get_psirz(divide_by_twopi=divide_by_twopi)[:, self.get_z0_idx()]) # to be fixed
+            psi_rz = self.get_psirz(transpose="Grid" not in self.data,
+                                    divide_by_twopi=divide_by_twopi)
+            return np.interp(r, self.get_r(), psi_rz[self.get_z0_idx(), :])
 
     def get_psi_contour(self,psi_ref, n_points=1000, closed=False, rotate=None, divide_by_twopi=False):
         r_psi = self.get_r()
         z_psi = self.get_z()
-        psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
+        psirz = self.get_psirz(transpose="Grid" not in self.data,
+                               divide_by_twopi=divide_by_twopi)
         print("psi_ref", psi_ref)
         contour_generator = contourpy.contour_generator(r_psi, z_psi, psirz, name='serial', total_chunk_count=1)
         if closed:
@@ -342,7 +418,8 @@ class DPEqFile(DPEqPlotter):
 
         R = self.get_r()
         Z = self.get_z()
-        Psirz = self.get_psirz(divide_by_twopi=divide_by_twopi)
+        Psirz = self.get_psirz(transpose="Grid" in self.data,
+                               divide_by_twopi=divide_by_twopi)
 
         # Create a 2D interpolator for Psi
         self.psi_interpolator = RegularGridInterpolator((R, Z), Psirz)
@@ -406,9 +483,3 @@ def print_dict_structure(d, indent=0):
 
 def read_eqfile(fn):
     return DPEqFile(fn)
-
-# # Example usage:
-# fn = "/Users/Jerome.Guterl/development/dipole_hermes_mesh/test.h5"
-
-# dpeq = DPEqReader(fn)
-# print_dict_structure(dpeq.data)
